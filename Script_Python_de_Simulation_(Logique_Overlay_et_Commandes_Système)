@@ -1,0 +1,260 @@
+import os
+import shutil
+import subprocess
+import sys
+import platform
+
+# Script Python simulant la logique d'OverlayFS avec des opérations de fichiers
+# et montrant comment appeler des commandes système (comme LVM)
+# ATTENTION : N'effectue PAS de vrais montages ni d'opérations LVM réelles.
+#             Simule uniquement la logique de priorité et d'écriture.
+
+# --- Configuration des chemins (simulés) ---
+BASE_DIR = "py_base_system"  # Équivalent 'lowerdir'
+HACKS_DIR = "py_hacks"       # Équivalent 'upperdir'
+UNION_VIEW = "py_union_view" # Répertoire où l'on simule la vue unifiée
+
+# --- Fonctions utilitaires ---
+
+def setup_dirs():
+    """Crée les répertoires de simulation."""
+    print("[+] Création des répertoires de simulation...")
+    for d in [BASE_DIR, HACKS_DIR, UNION_VIEW]:
+        if os.path.exists(d):
+            shutil.rmtree(d) # Nettoyer les exécutions précédentes
+        os.makedirs(os.path.join(d, "bin"), exist_ok=True)
+        os.makedirs(os.path.join(d, "etc"), exist_ok=True)
+
+    # Créer des fichiers de base
+    with open(os.path.join(BASE_DIR, "bin", "original_script.py"), "w") as f:
+        f.write("print('Script original du système de base (Python)')\n")
+    with open(os.path.join(BASE_DIR, "etc", "config.conf"), "w") as f:
+        f.write("config_base=valeur_originale\n")
+    print("Répertoires et fichiers de base créés.")
+
+    # Créer des fichiers de hacks
+    with open(os.path.join(HACKS_DIR, "bin", "original_script.py"), "w") as f:
+        f.write("print('*** SCRIPT HACKE !! (Python) ***')\n")
+    with open(os.path.join(HACKS_DIR, "etc", "config.conf"), "w") as f:
+        f.write("config_base=valeur_hackee\n")
+        f.write("hacked_by=python\n")
+    os.makedirs(os.path.join(HACKS_DIR, "new_dir"), exist_ok=True)
+    with open(os.path.join(HACKS_DIR, "new_dir", "fichier_pirate.txt"), "w") as f:
+        f.write("Fichier ajouté par le hack.\n")
+    print("Fichiers de hacks créés.")
+
+def get_overlay_path(relative_path):
+    """
+    Simule la lecture depuis l'OverlayFS.
+    Priorité à HACKS_DIR, sinon BASE_DIR.
+    Retourne le chemin réel du fichier ou None s'il n'existe nulle part.
+    """
+    hack_path = os.path.join(HACKS_DIR, relative_path)
+    base_path = os.path.join(BASE_DIR, relative_path)
+
+    if os.path.exists(hack_path):
+        return hack_path
+    elif os.path.exists(base_path):
+        return base_path
+    else:
+        return None
+
+def read_overlay_file(relative_path):
+    """Lit le contenu d'un fichier via la logique overlay simulée."""
+    real_path = get_overlay_path(relative_path)
+    if real_path:
+        try:
+            with open(real_path, 'r') as f:
+                return f.read()
+        except Exception as e:
+            print(f"Erreur de lecture de {real_path}: {e}")
+            return None
+    else:
+        print(f"Fichier {relative_path} non trouvé dans les couches overlay.")
+        return None
+
+def write_overlay_file(relative_path, content, append=False):
+    """
+    Simule l'écriture dans l'OverlayFS.
+    Écrit TOUJOURS dans HACKS_DIR (la couche 'upper').
+    Crée les répertoires nécessaires dans HACKS_DIR si besoin.
+    """
+    target_path = os.path.join(HACKS_DIR, relative_path)
+    target_dir = os.path.dirname(target_path)
+    os.makedirs(target_dir, exist_ok=True) # Assure que le répertoire existe
+
+    mode = 'a' if append else 'w'
+    try:
+        with open(target_path, mode) as f:
+            f.write(content)
+        print(f"Fichier '{relative_path}' écrit/modifié dans la couche hacks.")
+    except Exception as e:
+        print(f"Erreur d'écriture dans {target_path}: {e}")
+
+def list_overlay_dir(relative_path):
+    """
+    Simule un 'ls' sur l'OverlayFS.
+    Combine les contenus de HACKS_DIR et BASE_DIR, en donnant la priorité
+    aux éléments de HACKS_DIR (sans écraser).
+    """
+    hack_path = os.path.join(HACKS_DIR, relative_path)
+    base_path = os.path.join(BASE_DIR, relative_path)
+
+    items = set()
+    try:
+        if os.path.isdir(base_path):
+            items.update(os.listdir(base_path))
+    except FileNotFoundError:
+        pass # Le répertoire n'existe pas dans la base
+
+    try:
+        if os.path.isdir(hack_path):
+            items.update(os.listdir(hack_path))
+    except FileNotFoundError:
+        pass # Le répertoire n'existe pas dans les hacks
+
+    return sorted(list(items))
+
+def simulate_chroot_exec(relative_script_path):
+    """
+    Simule l'exécution d'un script comme s'il était dans un chroot.
+    Utilise la logique overlay pour trouver le bon script.
+    """
+    print(f"\n--- Simulation 'chroot' et exécution de '{relative_script_path}' ---")
+    real_script_path = get_overlay_path(relative_script_path)
+    if real_script_path and real_script_path.endswith('.py'):
+        try:
+            # Utilise l'interpréteur Python courant pour exécuter le script trouvé
+            result = subprocess.run([sys.executable, real_script_path],
+                                    capture_output=True, text=True, check=True)
+            print(f"Sortie du script ({real_script_path}):")
+            print(result.stdout)
+        except FileNotFoundError:
+             print(f"ERREUR: Interpréteur Python '{sys.executable}' non trouvé.")
+        except subprocess.CalledProcessError as e:
+            print(f"ERREUR lors de l'exécution de {real_script_path}:")
+            print(e.stderr)
+        except Exception as e:
+            print(f"Erreur inattendue lors de l'exécution: {e}")
+    elif real_script_path:
+        print(f"AVERTISSEMENT: Le script trouvé '{real_script_path}' n'est pas un .py, exécution non simulée.")
+    else:
+        print(f"ERREUR: Script '{relative_script_path}' non trouvé dans les couches overlay.")
+
+def simulate_lvm_migration_commands(origin_pv, target_pv, vg_name):
+    """
+    Affiche les commandes LVM qui *seraient* exécutées pour une migration.
+    Ne les exécute PAS réellement.
+    """
+    print("\n--- Simulation des commandes LVM pour la migration (affichage seul) ---")
+    if platform.system() != "Linux":
+        print("AVERTISSEMENT: Les commandes LVM sont spécifiques à Linux.")
+        print("               L'exécution réelle nécessiterait un environnement Linux et sudo.")
+
+    commands = [
+        f"sudo pvcreate {target_pv}", # Préparer la partition cible
+        f"sudo vgextend {vg_name} {target_pv}", # Ajouter la cible au groupe de volumes
+        f"sudo pvchange -x n {origin_pv}", # Interdire les nouvelles allocations sur l'origine
+        f"sudo pvmove -i 1 {origin_pv}", # Démarrer la migration (avec intervalle de rapport)
+        # ... Boucle pour lire la progression de pvmove ...
+        f"sudo vgreduce {vg_name} {origin_pv}" # Retirer l'origine du VG une fois vide
+    ]
+
+    print("Les commandes suivantes seraient typiquement exécutées :")
+    for cmd in commands:
+        print(f"  {cmd}")
+
+    # Exemple d'appel *réel* (commenté par sécurité)
+    # try:
+    #     print("\nTentative d'exécution de 'sudo lvm version' (nécessite sudo et LVM installé):")
+    #     result = subprocess.run(["sudo", "lvm", "version"], capture_output=True, text=True, check=True)
+    #     print(result.stdout)
+    # except FileNotFoundError:
+    #     print("ERREUR: Commande 'sudo' ou 'lvm' non trouvée.")
+    # except subprocess.CalledProcessError as e:
+    #     print(f"ERREUR: La commande LVM a échoué (êtes-vous sudoer? LVM est-il installé?).")
+    #     print(e.stderr)
+    # except Exception as e:
+    #     print(f"Erreur inattendue: {e}")
+
+
+def cleanup():
+    """Nettoie les répertoires créés."""
+    print("\n[+] Nettoyage des répertoires de simulation...")
+    for d in [BASE_DIR, HACKS_DIR, UNION_VIEW]:
+        if os.path.exists(d):
+            shutil.rmtree(d)
+    print("Nettoyage terminé.")
+
+# --- Programme Principal ---
+if __name__ == "__main__":
+    setup_dirs()
+
+    print("\n=== Démonstration de la logique Overlay (Python) ===")
+
+    # Lire des fichiers via l'overlay
+    print("\n[1] Lecture via Overlay:")
+    print(f"Contenu de 'etc/config.conf':\n{read_overlay_file('etc/config.conf')}")
+    print(f"Contenu de 'bin/original_script.py':\n{read_overlay_file('bin/original_script.py')}")
+    print(f"Contenu de 'new_dir/fichier_pirate.txt':\n{read_overlay_file('new_dir/fichier_pirate.txt')}")
+
+    # Lister un répertoire via l'overlay
+    print("\n[2] Listage de répertoire via Overlay ('etc'):")
+    print(list_overlay_dir('etc'))
+    print("\nListage de répertoire via Overlay ('new_dir'):")
+    print(list_overlay_dir('new_dir')) # Devrait montrer le fichier pirate
+    print("\nListage de répertoire via Overlay ('bin'):")
+    print(list_overlay_dir('bin'))
+
+    # Écrire un nouveau fichier via l'overlay
+    print("\n[3] Écriture via Overlay:")
+    write_overlay_file("etc/runtime_config.txt", "param=valeur_runtime\n")
+    print("Contenu de 'etc/runtime_config.txt' (lu via overlay):")
+    print(read_overlay_file('etc/runtime_config.txt'))
+    print("Vérification : Le fichier doit être dans HACKS_DIR:")
+    print(os.listdir(os.path.join(HACKS_DIR, "etc")))
+
+    # Modifier un fichier existant (qui existe dans les deux couches)
+    write_overlay_file("etc/config.conf", "modification=runtime\n", append=True)
+    print("\nContenu de 'etc/config.conf' après ajout (lu via overlay):")
+    print(read_overlay_file('etc/config.conf'))
+    print("Vérification : Le fichier modifié doit être celui de HACKS_DIR:")
+    with open(os.path.join(HACKS_DIR, "etc", "config.conf"), 'r') as f:
+        print(f.read())
+    print("Vérification : Le fichier de BASE_DIR ne doit pas avoir changé:")
+    with open(os.path.join(BASE_DIR, "etc", "config.conf"), 'r') as f:
+        print(f.read())
+
+    # Simuler l'exécution après chroot
+    simulate_chroot_exec("bin/original_script.py")
+
+    # Simuler les commandes LVM
+    # Remplacer par des noms de devices réels si vous testez sur une VM avec LVM
+    simulate_lvm_migration_commands(
+        origin_pv="/dev/sdX3", # Partition sur la clé USB (exemple)
+        target_pv="/dev/sdY2", # Partition sur le disque interne (exemple)
+        vg_name="vg_system"    # Nom du groupe de volume (exemple)
+    )
+
+    cleanup()
+
+    print("\n=== Fin de la démonstration Python ===")
+```
+
+**Protocole d'Installation et d'Exécution (Python) :**
+
+1.  **Prérequis :**
+    * Interpréteur Python 3 installé sur votre système.
+    * Aucune bibliothèque externe n'est requise pour la simulation de base.
+    * Pour la partie `simulate_lvm_migration_commands`, si vous décommentez l'appel réel à `sudo lvm version`, il vous faudra :
+        * Un système Linux.
+        * Le paquet LVM2 installé (souvent `lvm2` sur les distributions Debian/Ubuntu, Fedora, etc.).
+        * Les privilèges `sudo` configurés pour votre utilisateur.
+2.  **Installation :**
+    * Enregistrez le code ci-dessus dans un fichier, par exemple `peter_test.py`.
+3.  **Exécution :**
+    * Ouvrez un terminal.
+    * Naviguez jusqu'au répertoire où vous avez enregistré le fichier : `cd /chemin/vers/le/repertoire`
+    * Exécutez le script avec Python 3 : `python3 peter_test.py`.
+    * Le script créera les répertoires `py_base_system`, `py_hacks`, effectuera les simulations et affichera les résultats, puis nettoiera les répertoires.
+    * Notez que les commandes LVM affichées sont purement illustratives et ne sont pas exécutées par défaut

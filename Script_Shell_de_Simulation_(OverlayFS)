@@ -1,0 +1,156 @@
+#!/bin/bash
+
+# Script de démonstration des concepts d'OverlayFS et chroot
+# Inspiré par la discussion dans "Test de Peter"
+# ATTENTION : Nécessite les privilèges root (sudo) pour les montages et chroot.
+#             Ne modifie pas réellement le système de boot.
+#             À exécuter dans un répertoire temporaire sûr.
+
+echo "=== Démonstration OverlayFS et Chroot ==="
+echo "ATTENTION : Ce script nécessite les privilèges root (sudo)."
+echo "           Assurez-vous d'être dans un répertoire temporaire."
+read -p "Appuyez sur Entrée pour continuer ou Ctrl+C pour annuler..."
+
+# Vérifier si exécuté en tant que root
+if [ "$(id -u)" -ne 0 ]; then
+  echo "ERREUR : Ce script doit être exécuté avec sudo." >&2
+  exit 1
+fi
+
+# --- 1. Simulation du système de base (équivalent NFS monté) ---
+echo "[+] Création d'un système de fichiers de base simulé ('lower')..."
+mkdir -p base_system/bin base_system/etc base_system/usr/lib
+echo "#!/bin/bash" > base_system/bin/original_script
+echo "echo 'Script original du système de base'" >> base_system/bin/original_script
+chmod +x base_system/bin/original_script
+echo "config_base=valeur_originale" > base_system/etc/config.conf
+touch base_system/usr/lib/libbase.so
+echo "Contenu initial :"
+ls -lR base_system
+
+# --- 2. Simulation de la couche de hacks (sur la clé USB) ---
+echo -e "\n[+] Création de la couche de 'hacks' ('upper')..."
+mkdir -p hacks/bin hacks/etc hacks/new_dir
+echo "#!/bin/bash" > hacks/bin/original_script
+echo "echo '*** SCRIPT HACKE !! ***'" >> hacks/bin/original_script
+chmod +x hacks/bin/original_script
+echo "config_base=valeur_hackee" > hacks/etc/config.conf
+echo "nouvelle_config=activee" > hacks/etc/new_config.conf
+touch hacks/new_dir/fichier_pirate.txt
+echo "Contenu des hacks :"
+ls -lR hacks
+
+# --- 3. Création des répertoires pour OverlayFS ---
+echo -e "\n[+] Préparation des répertoires pour OverlayFS..."
+mkdir -p mnt_union work_dir # work_dir doit être sur le même fs que 'hacks'
+
+# --- 4. Chargement du module OverlayFS (si nécessaire) ---
+echo "[+] Vérification/Chargement du module noyau 'overlay'..."
+if ! lsmod | grep -q "^overlay "; then
+  modprobe overlay
+  if [ $? -ne 0 ]; then
+    echo "ERREUR : Impossible de charger le module 'overlay'." >&2
+    rmdir mnt_union work_dir
+    rm -rf base_system hacks
+    exit 1
+  fi
+  echo "Module 'overlay' chargé."
+else
+  echo "Module 'overlay' déjà chargé."
+fi
+
+# --- 5. Montage de l'OverlayFS ---
+# On combine 'base_system' (lower) et 'hacks' (upper) dans 'mnt_union'
+echo "[+] Montage de l'OverlayFS..."
+mount -t overlay overlay -o lowerdir=./base_system,upperdir=./hacks,workdir=./work_dir ./mnt_union
+if [ $? -ne 0 ]; then
+  echo "ERREUR : Le montage OverlayFS a échoué." >&2
+  rmdir mnt_union work_dir
+  rm -rf base_system hacks
+  exit 1
+fi
+echo "OverlayFS monté sur ./mnt_union."
+
+# --- 6. Exploration de l'union ---
+echo -e "\n[+] Exploration du système de fichiers unifié (mnt_union)..."
+ls -lR mnt_union
+
+echo -e "\n[+] Vérification des fichiers :"
+echo "--- Contenu mnt_union/bin/original_script (devrait être hacké) ---"
+cat mnt_union/bin/original_script
+echo "--- Contenu mnt_union/etc/config.conf (devrait être hacké) ---"
+cat mnt_union/etc/config.conf
+echo "--- Contenu mnt_union/etc/new_config.conf (nouveau fichier) ---"
+cat mnt_union/etc/new_config.conf
+echo "--- Présence de mnt_union/usr/lib/libbase.so (vient de la base) ---"
+ls -l mnt_union/usr/lib/libbase.so
+echo "--- Présence de mnt_union/new_dir/fichier_pirate.txt (vient des hacks) ---"
+ls -l mnt_union/new_dir/fichier_pirate.txt
+
+# --- 7. Simulation de l'écriture dans l'union ---
+echo -e "\n[+] Simulation d'une écriture dans l'union..."
+echo "nouvelle_ligne=ajoutee_via_union" >> mnt_union/etc/config.conf
+touch mnt_union/fichier_cree_via_union.txt
+echo "Contenu de config.conf après modification :"
+cat mnt_union/etc/config.conf
+echo "Vérification où la modification a été écrite (devrait être dans 'hacks') :"
+ls -l hacks/etc/config.conf
+cat hacks/etc/config.conf
+echo "Vérification où le nouveau fichier a été créé (devrait être dans 'hacks') :"
+ls -l hacks/fichier_cree_via_union.txt
+
+# --- 8. Simulation du chroot (sans exec pour pouvoir continuer le script) ---
+# ATTENTION : Un vrai chroot nécessite un système cible plus complet
+#             (bibliothèques, shell, etc.). Ici, on lance juste un script.
+echo -e "\n[+] Simulation du 'chroot' dans l'union pour lancer un script..."
+# Copie d'un shell basique pour que chroot fonctionne (nécessaire sur certains systèmes)
+# Dans un vrai initramfs, on aurait les outils nécessaires.
+mkdir -p mnt_union/bin_for_chroot
+cp /bin/bash mnt_union/bin_for_chroot/bash # Copie un shell
+# On ne peut pas directement chrooter et exécuter notre script car il dépend
+# de /bin/bash qui n'est pas dans notre chroot minimaliste.
+# On va plutôt lancer un shell via chroot et exécuter la commande depuis ce shell.
+echo "Exécution de '/bin/original_script' DANS l'environnement chrooté :"
+# Note : On utilise le chemin relatif au chroot.
+chroot ./mnt_union /bin_for_chroot/bash -c "/bin/original_script"
+# Vérifier le code de sortie peut être utile
+if [ $? -ne 0 ]; then
+    echo "AVERTISSEMENT: Le chroot a peut-être échoué ou le script a eu une erreur."
+    echo "             Cela peut arriver si l'environnement chroot est trop minimal."
+fi
+# Nettoyage du shell copié
+rm -rf mnt_union/bin_for_chroot
+
+# --- 9. Démontage et nettoyage ---
+echo -e "\n[+] Démontage de l'OverlayFS et nettoyage..."
+umount ./mnt_union
+if [ $? -ne 0 ]; then
+  echo "AVERTISSEMENT : Le démontage a échoué. Essayez 'sudo umount -l ./mnt_union'"
+fi
+rmdir mnt_union work_dir
+rm -rf base_system hacks
+echo "Nettoyage terminé."
+
+echo -e "\n=== Fin de la démonstration ==="
+
+exit 0
+```
+**Protocole d'Installation et d'Exécution (Shell) :**
+
+1.  **Prérequis :**
+    * Un système d'exploitation GNU/Linux.
+    * Les commandes shell standard (`mkdir`, `echo`, `chmod`, `ls`, `cat`, `rm`, `rmdir`).
+    * La commande `mount` et `umount`.
+    * Le module noyau `overlay` (présent dans la plupart des noyaux Linux modernes). La commande `modprobe` pour le charger si besoin.
+    * La commande `chroot`.
+    * Les privilèges `root` (administrateur), généralement obtenus via `sudo`.
+2.  **Installation :**
+    * Enregistrez le code ci-dessus dans un fichier, par exemple `peter_test.sh`.
+    * Rendez le fichier exécutable : `chmod +x peter_test.sh`.
+3.  **Exécution :**
+    * Ouvrez un terminal.
+    * Créez un répertoire temporaire pour exécuter le script en toute sécurité : `mkdir /tmp/peter_demo && cd /tmp/peter_demo`
+    * Copiez le script dans ce répertoire : `cp /chemin/vers/peter_test.sh .`
+    * Exécutez le script avec `sudo` : `sudo ./peter_test.sh`.
+    * Suivez les instructions affichées par le script.
+4.  **Nettoyage (si nécessaire) :** Le script tente de nettoyer après lui. Si le démontage échoue, vous devrez peut-être le faire manuellement (`sudo umount /tmp/peter_demo/mnt_union`) avant de supprimer le répertoire temporaire (`cd /tmp && rm -rf /tmp/peter_demo
