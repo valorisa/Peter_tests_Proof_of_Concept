@@ -1,4 +1,5 @@
-Analyse Approfondie du "Test de Peter"
+# Projet
+
 Le texte fourni relate une conversation entre le narrateur et son ami Peter, un passionné de tests en tout genre. La discussion se concentre sur la faisabilité technique d'une scène de piratage informatique tirée d'une série américaine (probablement NCIS, mentionnant les personnages Gibbs, McGee, DiNozzo). Dans cette scène, l'agent McGee compromet l'ordinateur de l'agent Devon (soupçonné d'être une taupe) en le redémarrant sur une clé USB spécialement préparée, puis en retirant la clé "à chaud" une fois une barre de progression terminée, sans que Devon ne remarque de changement sur son système par la suite.
 
 Peter et le narrateur décortiquent les aspects techniques qui pourraient rendre ce scénario, bien qu'invraisemblable à première vue, potentiellement réalisable sous certaines conditions spécifiques. Voici les points techniques clés abordés :
