@@ -120,6 +120,6 @@ Pour pirater le système NFS sans le modifier directement, McGee pourrait modifi
 
 ---
 
-## Conclusion du Texte
+## Conclusion
 
 Le scénario, bien que complexe et nécessitant des conditions précises (NFS, LVM pré-existant ou mis en place, initramfs modifiable), n'est pas techniquement "impossible", mais plutôt "invraisemblable" dans un contexte non préparé. L'analyse détaillée montre comment des technologies Linux existantes pourraient être combinées pour atteindre le résultat vu dans la série.
