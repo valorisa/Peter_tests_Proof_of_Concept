@@ -169,4 +169,4 @@ L'analyse technique explorée dans "Test de Peter" suggère une combinaison plau
 
 ## Licence
 
-Ce projet est fourni sous la licence MIT. Voir le fichier `LICENSE` pour plus de détails. (Note: Vous devriez ajouter un fichier LICENSE contenant le texte de la licence MIT si vous souhaitez utiliser cette licence).
+Ce projet est fourni sous la licence MIT. Voir le fichier `LICENSE` pour plus de détails.
