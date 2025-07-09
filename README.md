@@ -170,3 +170,7 @@ L'analyse technique explorée dans "Test de Peter" suggère une combinaison plau
 ## Licence
 
 Ce projet est fourni sous la licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+
+## Sources
+
+https://connect.ed-diamond.com/GNU-Linux-Magazine/glmf-206/le-test-de-peter
