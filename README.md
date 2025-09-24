@@ -78,8 +78,8 @@ L'analyse technique explorée dans "Test de Peter" suggère une combinaison plau
 1. Clonez ce dépôt GitHub :
 
     ```bash
-    git clone <URL_DU_DEPOT>
-    cd <NOM_DU_REPERTOIRE>
+    git clone https://github.com/valorisa/Peter_tests_Proof_of_Concept
+    cd Peter_tests_Proof_of_Concept
     ```
 
 2. Rendez le script Shell exécutable :
